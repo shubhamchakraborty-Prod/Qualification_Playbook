@@ -54,15 +54,23 @@ python3 -m http.server 8000
 
 ## Publishing to GitHub Pages
 
-Two options, both supported by this repository:
+Pages has to be switched on once by hand. The workflow token cannot create the Pages site itself
+(`Resource not accessible by integration`), so the first step below is not optional.
 
-1. **GitHub Actions (recommended).** In *Settings → Pages*, set **Source** to **GitHub Actions**.
-   The workflow in `.github/workflows/pages.yml` publishes the repository root on every push to the
-   default branch and can also be run manually from the Actions tab. If the default branch is renamed,
-   update the `branches:` list in that workflow to match.
-2. **Deploy from a branch.** In *Settings → Pages*, set **Source** to **Deploy from a branch**, then
-   pick the branch and the `/ (root)` folder. The `.nojekyll` file is already present so Jekyll does
-   not touch the assets.
+1. Open *Settings → Pages*.
+2. Set **Source** to **GitHub Actions**.
+3. Open the *Actions* tab, pick **Deploy to GitHub Pages**, and choose **Run workflow**. Every later
+   push to the default branch deploys automatically.
+
+The site is then served at `https://<owner>.github.io/Qualification_Playbook/`.
+
+If you would rather not use Actions, set **Source** to **Deploy from a branch** in the same settings
+page and pick the branch with the `/ (root)` folder. The `.nojekyll` file is already present so Jekyll
+does not touch the assets.
+
+The workflow listens on `main` and on `claude/zen-ritchie-ymfz25`, which is currently the default
+branch. If the default branch is renamed, update the `branches:` list in `.github/workflows/pages.yml`
+to match.
 
 ## Structure
 
