@@ -57,8 +57,9 @@ python3 -m http.server 8000
 Two options, both supported by this repository:
 
 1. **GitHub Actions (recommended).** In *Settings → Pages*, set **Source** to **GitHub Actions**.
-   The workflow in `.github/workflows/pages.yml` publishes the repository root on every push to `main`
-   and can also be run manually from the Actions tab.
+   The workflow in `.github/workflows/pages.yml` publishes the repository root on every push to the
+   default branch and can also be run manually from the Actions tab. If the default branch is renamed,
+   update the `branches:` list in that workflow to match.
 2. **Deploy from a branch.** In *Settings → Pages*, set **Source** to **Deploy from a branch**, then
    pick the branch and the `/ (root)` folder. The `.nojekyll` file is already present so Jekyll does
    not touch the assets.
