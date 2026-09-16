@@ -44,6 +44,24 @@ Three modes, switchable from the header and remembered between visits. They diff
 Search indexes all three modes, so a beginner explainer or a practitioner note is findable
 whichever mode is active.
 
+## How it is structured
+
+It is a documentation site, not a scrolling document.
+
+- **Home is a task launcher.** Eight jobs phrased the way someone actually arrives
+  ("I have a partner meeting coming up", "Someone told me a certificate counts. Does it?"),
+  each opening the page that settles it. Below that, the 14 sections as cards with a
+  one-line answer, a contents badge and a reading time.
+- **One section per page**, routed on the hash (`#/states`). A page is roughly 700 words
+  rather than one 15,000-word scroll. Legacy `#states` links normalise to `#/states`,
+  and the browser back button works.
+- **Answer-first page headers.** Every page opens with the one sentence it settles, then
+  **If you read nothing else** (three takeaways), then **Use this page to** (concrete jobs).
+  The What / Why / How triad is still there, folded below.
+- **Long tables collapse to six rows** with a "Show all N rows" control, and expand
+  automatically as soon as you search or filter them.
+- **On this page** rail on wide screens, **Previous / Next** at the foot of every page.
+
 ## Features
 
 - **Global search** across every table row, template, myth and source. `Ctrl`/`Cmd` + `K`, or `/`.
@@ -52,7 +70,7 @@ whichever mode is active.
 - **Inline citations** that jump to the source entry.
 - **Copy-to-clipboard** first-contact templates for email, LinkedIn, WhatsApp and government notes.
 - **Light and dark mode**, following the system preference and overridable, with the choice remembered.
-- **Responsive by design**: wide tables become labelled cards below 860px; the sidebar becomes a drawer below 1080px.
+- **Responsive by design**: wide tables become labelled cards below 860px; the sidebar becomes a drawer below 1080px; the on-this-page rail appears above 1340px.
 - **Print and PDF stylesheet** via the toolbar print button.
 
 ## Running it
@@ -94,6 +112,7 @@ index.html                 markup shell, fonts, header, search modal
 assets/css/styles.css      design tokens, layout, components, responsive and print rules
 assets/js/data.js          all playbook content as structured data (sections, tables, sources)
 assets/js/modes.js         beginner explainers, advanced practitioner notes, glossary, per-mode columns
+assets/js/guide.js         home task cards, answer-first page headers, section badges
 assets/js/app.js           renderer, search index, table filters, Credential Navigator, modes, theming
 assets/img/                logo mark, stacked lockup, favicon (vector, from the master artwork)
 ```

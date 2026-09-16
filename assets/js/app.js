@@ -39,12 +39,7 @@
   var MODE_KEY = "saa-playbook-mode";
   var MODE = "i";
   try { var sm = localStorage.getItem(MODE_KEY); if (sm && /^[bia]$/.test(sm)) MODE = sm; } catch (e) {}
-  function setMode(m) {
-    if (m === MODE) return;
-    MODE = m;
-    try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
-    renderAll();
-  }
+  // mode switching is handled by the click delegate, which repaints in place
   function modeMeta() {
     return PB.modes.filter(function (x) { return x.k === MODE; })[0];
   }
@@ -191,6 +186,8 @@
       });
       tools += '<button class="btn-clear" data-tclear="' + esc(b.id) + '" type="button">Reset</button>';
       tools += '<span class="tbl-count" data-tcount="' + esc(b.id) + '"></span></div>';
+    } else {
+      tools += '<div class="table-tools bare"><span class="tbl-count" data-tcount="' + esc(b.id) + '"></span></div>';
     }
 
     var head = "<tr>" + cols.map(function (c) {
@@ -213,7 +210,9 @@
       tools +
       '<div class="table-scroll"><table><thead>' + head + "</thead><tbody>" + body +
       '<tr class="empty-row" hidden><td colspan="' + cols.length + '">No rows match these filters.</td></tr>' +
-      "</tbody></table></div></div>";
+      "</tbody></table></div>" +
+      '<button class="btn-more" type="button" data-tmore="' + esc(b.id) + '" hidden></button>' +
+      "</div>";
   };
 
   R.plain = function (pl) {
@@ -252,80 +251,244 @@
       "</div></div>";
   };
 
-  /* ================================================== BUILD PAGE */
-  function renderSection(s) {
-    var pl = PB.plain[s.id];
-    var wwh = (MODE === "b" && pl && pl.wwh) ? pl.wwh : s.wwh;
+  /* ================================================== PAGE ASSEMBLY */
 
-    var h = '<section class="section" id="' + esc(s.id) + '">';
-    h += '<div class="section-head"><span class="num">' + esc(s.num) + " / " + esc(s.eyebrow) + "</span>" +
-      "<h2>" + esc(s.title) + "</h2>" +
-      '<p class="section-summary">' + esc(MODE === "b" && pl ? pl.lede : s.summary) + "</p></div>";
-    h += '<div class="wwh">' +
-      '<div class="wwh-card"><span class="k">What</span><p>' + esc(wwh.what) + "</p></div>" +
-      '<div class="wwh-card"><span class="k">Why</span><p>' + esc(wwh.why) + "</p></div>" +
-      '<div class="wwh-card"><span class="k">How</span><p>' + esc(wwh.how) + "</p></div></div>";
+  var HOME = "__home";
+  var current = HOME;
 
-    if (MODE === "b" && pl) h += R.plain(pl);
-
-    s.blocks.forEach(function (b) {
-      // Beginner mode drops the citation-heavy regulatory prose; the plain
-      // explainer above covers the same ground in simpler language.
-      if (MODE === "b" && b.t === "prose") return;
-      if (R[b.t]) h += R[b.t](b);
-    });
-
-    if (MODE === "a" && PB.pro[s.id]) h += R.pro(PB.pro[s.id]);
-
-    return h + "</section>";
+  function sectionById(id) {
+    return PB.sections.filter(function (s) { return s.id === id; })[0];
   }
 
-  function renderSources() {
-    var h = '<section class="section" id="sources">' +
-      '<div class="section-head"><span class="num">15 / REFERENCES</span><h2>Sources</h2>' +
-      '<p class="section-summary">Every claim in this playbook traces to a primary source. ' + esc(PB.meta.verified) + '.</p></div>' +
-      '<div class="sources">';
-    PB.sources.forEach(function (s) {
-      h += '<div class="src" id="src-' + slug(s.n) + '"><span class="n">[' + esc(s.n) + ']</span>' +
-        '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.label) + "</a></div>";
+  function readingTime(sec) {
+    var words = 0;
+    var pl = PB.plain[sec.id], hp = PB.helps[sec.id];
+    words += strip(sec.summary + " " + (hp ? hp.answer + hp.takeaways.join(" ") : "")).split(/\s+/).length;
+    if (MODE === "b" && pl) words += strip(pl.points.map(function (p) { return p.h + p.p; }).join(" ") + pl.analogy).split(/\s+/).length;
+    sec.blocks.forEach(function (b) {
+      if (b.t === "prose" && MODE === "b") return;
+      if (b.t === "table") { words += b.rows.length * 22; return; }
+      words += strip(JSON.stringify(b)).split(/\s+/).length * 0.7;
     });
-    return h + "</div></section>";
+    if (MODE === "a" && PB.pro[sec.id]) words += strip(PB.pro[sec.id].map(function (n) { return n.h + n.p; }).join(" ")).split(/\s+/).length;
+    return Math.max(2, Math.round(words / 240));
   }
 
-  function renderNav() {
-    var h = '<div class="sidenav-title">Sections</div>';
-    PB.sections.forEach(function (s) {
-      h += '<a class="navlink" href="#' + esc(s.id) + '"><span class="n">' + esc(s.num) + "</span><span>" + esc(s.title) + "</span></a>";
-    });
-    h += '<a class="navlink" href="#sources"><span class="n">15</span><span>Sources</span></a>';
-    h += '<div class="nav-foot"><p>' + esc(PB.meta.verified) + ".</p><p>" + esc(PB.meta.owner) + " &middot; v" + esc(PB.meta.version) + "</p></div>";
-    return h;
-  }
-
-  function renderHero() {
+  /* ---------------------------------------------------------- home */
+  function renderHome() {
     var tables = 0, rows = 0;
     PB.sections.forEach(function (s) {
       s.blocks.forEach(function (b) { if (b.t === "table") { tables++; rows += b.rows.length; } });
     });
-    return '<header class="hero">' +
-      '<img class="hero-logo" src="assets/img/logo-mark.svg" alt="">' +
+
+    var h = '<header class="home-hero">' +
+      '<img class="home-logo" src="assets/img/logo-mark.svg" alt="">' +
       '<span class="eyebrow">Swift AI Academy &middot; Credential Strategy</span>' +
-      "<h1>" + esc(PB.meta.title) + "</h1>" +
-      '<p class="hero-lede">' + esc(PB.meta.strapline) + "</p>" +
-      '<div class="hero-mode"><span class="k">Reading mode: ' + esc(modeMeta().label) + "</span><p>" + esc(modeMeta().blurb) + "</p></div>" +
-      '<div class="hero-stats">' +
-      '<div class="hero-stat"><b>' + PB.sections.length + '</b><span>Sections</span></div>' +
-      '<div class="hero-stat"><b>' + tables + '</b><span>Master tables</span></div>' +
-      '<div class="hero-stat"><b>' + rows + '</b><span>Mapped rows</span></div>' +
-      '<div class="hero-stat"><b>36</b><span>States &amp; UTs</span></div>' +
-      '<div class="hero-stat"><b>' + PB.sources.length + '</b><span>Primary sources</span></div>' +
+      "<h1>Which certificate can you actually promise?</h1>" +
+      '<p class="home-lede">India runs several separate credential systems. This playbook tells you which one applies to your programme, who has the authority to issue it, and what to do first.</p>' +
+      '<div class="home-actions">' +
+      '<a class="btn btn-gold" href="#/navigator"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 5-5 2.2 2.2-5z"/></svg>Open the Credential Navigator</a>' +
+      '<button class="btn btn-ghost" type="button" id="heroSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Search all ' + rows + " rows</button>" +
       "</div>" +
-      '<div class="hero-cta">' +
-      '<a class="btn btn-gold" href="#navigator"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 5-5 2.2 2.2-5z"/></svg>Open the Credential Navigator</a>' +
-      '<a class="btn btn-ghost" href="#start">Read the strategy</a>' +
-      "</div></header>";
+      '<p class="home-meta">' + esc(PB.meta.verified) + " &middot; " + PB.sections.length + " sections &middot; " + tables + " reference tables &middot; " + PB.sources.length + " primary sources</p>" +
+      "</header>";
+
+    h += '<section class="home-block"><h2 class="home-h2">Start with what you need to do</h2>' +
+      '<p class="home-sub">Each one opens the page that settles it.</p><div class="tasks">';
+    PB.tasks.forEach(function (t) {
+      var sec = sectionById(t.to);
+      h += '<a class="task" href="#/' + esc(t.to) + '"><span class="task-q">' + esc(t.q) + "</span>" +
+        '<span class="task-note">' + esc(t.note) + "</span>" +
+        '<span class="task-go">' + esc(sec ? sec.title : t.to) +
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></a>';
+    });
+    h += "</div></section>";
+
+    h += '<section class="home-block"><h2 class="home-h2">Or work through it in order</h2>' +
+      '<p class="home-sub">Fourteen sections. Each one is a short page, not a chapter.</p><div class="secgrid">';
+    PB.sections.forEach(function (s) {
+      var hp = PB.helps[s.id];
+      h += '<a class="seccard" href="#/' + esc(s.id) + '">' +
+        '<span class="seccard-top"><span class="n">' + esc(s.num) + "</span>" +
+        '<span class="badge">' + esc(PB.badges[s.id] || "") + "</span></span>" +
+        "<h3>" + esc(s.title) + "</h3>" +
+        "<p>" + esc(hp ? hp.answer : s.summary) + "</p>" +
+        '<span class="seccard-time">' + readingTime(s) + " min read</span></a>";
+    });
+    h += "</div></section>";
+
+    h += '<section class="home-block"><a class="srcbar" href="#/sources"><b>Sources</b>' +
+      "<span>Every claim traces to a primary source. " + PB.sources.length + " entries covering all 76 citations.</span></a></section>";
+
+    return '<div class="wrap home">' + h + "</div>";
   }
 
+  /* ---------------------------------------------------------- section page */
+  function renderPageHead(s) {
+    var hp = PB.helps[s.id];
+    var pl = PB.plain[s.id];
+    var wwh = (MODE === "b" && pl && pl.wwh) ? pl.wwh : s.wwh;
+    var idx = PB.sections.indexOf(s);
+
+    var h = '<nav class="crumb"><a href="#/">Playbook</a><span>/</span><b>' + esc(s.title) + "</b></nav>";
+
+    h += '<header class="pagehead">' +
+      '<span class="eyebrow">' + esc(s.num) + " / " + esc(s.eyebrow) + " &middot; " + readingTime(s) + " min read</span>" +
+      "<h1>" + esc(s.title) + "</h1>" +
+      '<p class="answer">' + esc(MODE === "b" && pl ? pl.lede : (hp ? hp.answer : s.summary)) + "</p>";
+
+    if (hp) {
+      h += '<div class="minute"><span class="k">If you read nothing else</span><ul>';
+      hp.takeaways.forEach(function (t) { h += "<li>" + esc(t) + "</li>"; });
+      h += "</ul></div>";
+
+      h += '<div class="jobs"><span class="k">Use this page to</span><div class="jobchips">';
+      hp.jobs.forEach(function (j) { h += "<span>" + esc(j) + "</span>"; });
+      h += "</div></div>";
+    }
+
+    h += '<details class="wwh-fold"><summary>What this is, why it matters, how to use it</summary>' +
+      '<div class="wwh">' +
+      '<div class="wwh-card"><span class="k">What</span><p>' + esc(wwh.what) + "</p></div>" +
+      '<div class="wwh-card"><span class="k">Why</span><p>' + esc(wwh.why) + "</p></div>" +
+      '<div class="wwh-card"><span class="k">How</span><p>' + esc(wwh.how) + "</p></div></div></details>";
+
+    h += "</header>";
+    return { html: h, idx: idx };
+  }
+
+  function renderPage(id) {
+    var s = sectionById(id);
+    if (!s) return renderSources();
+
+    var head = renderPageHead(s);
+    var pl = PB.plain[s.id];
+    var body = "";
+
+    if (MODE === "b" && pl) body += R.plain(pl);
+    s.blocks.forEach(function (b) {
+      if (MODE === "b" && b.t === "prose") return;
+      if (R[b.t]) body += R[b.t](b);
+    });
+    if (MODE === "a" && PB.pro[s.id]) body += R.pro(PB.pro[s.id]);
+
+    // prev / next
+    var prev = PB.sections[head.idx - 1];
+    var next = PB.sections[head.idx + 1];
+    var foot = '<nav class="pager">';
+    foot += prev
+      ? '<a class="pg prev" href="#/' + esc(prev.id) + '"><span class="k">Previous</span><b>' + esc(prev.title) + "</b></a>"
+      : '<a class="pg prev" href="#/"><span class="k">Back to</span><b>Home</b></a>';
+    foot += next
+      ? '<a class="pg next" href="#/' + esc(next.id) + '"><span class="k">Next</span><b>' + esc(next.title) + "</b></a>"
+      : '<a class="pg next" href="#/sources"><span class="k">Next</span><b>Sources</b></a>';
+    foot += "</nav>";
+
+    return '<div class="wrap page">' + head.html +
+      '<div class="pagebody">' + body + "</div>" + foot + "</div>";
+  }
+
+  function renderSources() {
+    var h = '<nav class="crumb"><a href="#/">Playbook</a><span>/</span><b>Sources</b></nav>' +
+      '<header class="pagehead"><span class="eyebrow">15 / REFERENCES</span><h1>Sources</h1>' +
+      '<p class="answer">Every claim in this playbook traces to a primary source. ' + esc(PB.meta.verified) + ".</p></header>" +
+      '<div class="pagebody"><div class="sources">';
+    PB.sources.forEach(function (s) {
+      h += '<div class="src" id="src-' + slug(s.n) + '"><span class="n">[' + esc(s.n) + ']</span>' +
+        '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.label) + "</a></div>";
+    });
+    h += "</div></div>" +
+      '<nav class="pager"><a class="pg prev" href="#/action"><span class="k">Previous</span><b>Action plan</b></a>' +
+      '<a class="pg next" href="#/"><span class="k">Back to</span><b>Home</b></a></nav>';
+    return '<div class="wrap page">' + h + "</div>";
+  }
+
+  /* ---------------------------------------------------------- sidebar */
+  function renderNav() {
+    var h = '<a class="navlink navhome' + (current === HOME ? " active" : "") + '" href="#/">' +
+      '<span class="n"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><span>Home</span></a>';
+    h += '<div class="sidenav-title">Sections</div>';
+    PB.sections.forEach(function (s) {
+      h += '<a class="navlink' + (current === s.id ? " active" : "") + '" href="#/' + esc(s.id) + '">' +
+        '<span class="n">' + esc(s.num) + "</span><span>" + esc(s.title) + "</span></a>";
+    });
+    h += '<a class="navlink' + (current === "sources" ? " active" : "") + '" href="#/sources"><span class="n">15</span><span>Sources</span></a>';
+    h += '<div class="nav-foot"><p>' + esc(PB.meta.verified) + ".</p><p>" + esc(PB.meta.owner) + " &middot; v" + esc(PB.meta.version) + "</p></div>";
+    return h;
+  }
+
+  /* ---------------------------------------------------------- on this page */
+  function renderToc() {
+    var items = $$(".pagebody .block-title h3, .pagebody .sub-heading");
+    if (items.length < 3) return "";
+    var h = '<div class="toc"><span class="k">On this page</span><ul>';
+    items.forEach(function (el, i) {
+      var id = "sec-" + i;
+      el.id = id;
+      h += '<li><a href="#' + id + '" data-toc="' + id + '">' + esc(el.textContent) + "</a></li>";
+    });
+    return h + "</ul></div>";
+  }
+
+  /* ================================================== TABLE FILTERING */
+  var ROW_CAP = 6;
+  var expanded = {};
+
+  function applyTable(id) {
+    var wrap = $('[data-table="' + id + '"]');
+    if (!wrap) return;
+    var input = $('[data-tsearch="' + id + '"]');
+    var q = input ? input.value.trim().toLowerCase() : "";
+    var filters = {};
+    $$('[data-tfilter="' + id + '"]').forEach(function (sel) {
+      sel.classList.toggle("on", !!sel.value);
+      if (sel.value) filters[sel.dataset.key] = sel.value;
+    });
+    var active = !!q || Object.keys(filters).length > 0;
+
+    var matches = [], total = 0;
+    $$("tbody tr", wrap).forEach(function (tr) {
+      if (tr.classList.contains("empty-row")) return;
+      total++;
+      var ok = true;
+      for (var k in filters) {
+        var cell = $('[data-key="' + k + '"]', tr);
+        if (!cell || cell.textContent.trim() !== filters[k]) { ok = false; break; }
+      }
+      if (ok && q) ok = tr.textContent.toLowerCase().indexOf(q) !== -1;
+      if (ok) matches.push(tr);
+      tr.hidden = !ok;
+    });
+
+    // Collapse long tables until the reader asks for more, or is filtering.
+    var capped = 0;
+    if (!active && !expanded[id] && matches.length > ROW_CAP + 2) {
+      matches.forEach(function (tr, i) { if (i >= ROW_CAP) { tr.hidden = true; capped++; } });
+    }
+
+    var empty = $(".empty-row", wrap);
+    if (empty) empty.hidden = matches.length !== 0;
+
+    var more = $('[data-tmore="' + id + '"]');
+    if (more) {
+      if (capped) {
+        more.hidden = false;
+        more.textContent = "Show all " + matches.length + " rows";
+      } else if (!active && expanded[id] && matches.length > ROW_CAP + 2) {
+        more.hidden = false;
+        more.textContent = "Show fewer";
+      } else {
+        more.hidden = true;
+      }
+    }
+
+    var count = $('[data-tcount="' + id + '"]');
+    if (count) {
+      count.textContent = active
+        ? matches.length + " of " + total
+        : (capped ? ROW_CAP + " of " + total : total + " rows");
+    }
+  }
   /* ================================================== GLOSSARY (beginner) */
   var GLOSS_SEL = ".plain p, .prose p, .callout p, .wwh-card p, .section-summary, .acc-body p, .layer p, .card p";
 
@@ -438,38 +601,6 @@
     return h;
   }
 
-  /* ================================================== TABLE FILTERING */
-  function applyTable(id) {
-    var wrap = $('[data-table="' + id + '"]');
-    if (!wrap) return;
-    var input = $('[data-tsearch="' + id + '"]');
-    var q = input ? input.value.trim().toLowerCase() : "";
-    var filters = {};
-    $$('[data-tfilter="' + id + '"]').forEach(function (sel) {
-      sel.classList.toggle("on", !!sel.value);
-      if (sel.value) filters[sel.dataset.key] = sel.value;
-    });
-
-    var shown = 0, total = 0;
-    $$("tbody tr", wrap).forEach(function (tr) {
-      if (tr.classList.contains("empty-row")) return;
-      total++;
-      var ok = true;
-      for (var k in filters) {
-        var cell = $('[data-key="' + k + '"]', tr);
-        if (!cell || cell.textContent.trim() !== filters[k]) { ok = false; break; }
-      }
-      if (ok && q) ok = tr.textContent.toLowerCase().indexOf(q) !== -1;
-      tr.hidden = !ok;
-      if (ok) shown++;
-    });
-
-    var empty = $(".empty-row", wrap);
-    if (empty) empty.hidden = shown !== 0;
-    var count = $('[data-tcount="' + id + '"]');
-    if (count) count.textContent = shown === total ? total + " rows" : shown + " of " + total;
-  }
-
   /* ================================================== NAVIGATOR */
   var LAYER_NAME = { A: "Programme", B: "Industry / OEM", C: "NSQF", D: "Institutional", E: "Academic credit", F: "State" };
 
@@ -504,26 +635,6 @@
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
-  /* ================================================== SCROLL SPY */
-  var spyObs = null;
-  function initSpy() {
-    if (spyObs) spyObs.disconnect();
-    var links = {};
-    $$(".navlink").forEach(function (a) { links[a.getAttribute("href").slice(1)] = a; });
-    spyObs = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        $$(".navlink").forEach(function (a) { a.classList.remove("active"); });
-        var a = links[e.target.id];
-        if (a) {
-          a.classList.add("active");
-          if (window.innerWidth > 1080) a.scrollIntoView({ block: "nearest" });
-        }
-      });
-    }, { rootMargin: "-80px 0px -72% 0px", threshold: 0 });
-    $$("section.section").forEach(function (s) { spyObs.observe(s); });
-  }
-
   /* ================================================== SEARCH MODAL */
   function initSearch() {
     var modal = $("#searchModal"), input = $("#searchInput"), res = $("#searchResults");
@@ -551,7 +662,7 @@
         return;
       }
       res.innerHTML = items.map(function (it, i) {
-        return '<a class="res" data-i="' + i + '" href="#' + esc(it.a) + '">' +
+        return '<a class="res" data-i="' + i + '" href="#/' + esc(it.a) + '">' +
           '<span class="rs">' + esc(it.s) + "</span>" +
           '<span class="rt">' + hl(it.t, q) + "</span>" +
           '<span class="rb">' + hl(it.b.slice(0, 210), q) + "</span></a>";
@@ -590,7 +701,17 @@
     });
   }
 
-  /* ================================================== BOOT */
+
+  /* ================================================== ROUTER + BOOT */
+  function parseHash() {
+    var h = location.hash || "";
+    if (h.indexOf("#/") === 0) return h.slice(2) || HOME;
+    // legacy deep links (#states) and in-page anchors (#sec-3)
+    var bare = h.slice(1);
+    if (!bare || bare.indexOf("sec-") === 0 || bare.indexOf("src-") === 0) return null;
+    return bare;
+  }
+
   function renderModeSwitch() {
     return PB.modes.map(function (m) {
       return '<button type="button" class="mode-btn' + (m.k === MODE ? " on" : "") +
@@ -599,37 +720,66 @@
     }).join("");
   }
 
-  function renderAll() {
-    var y = window.scrollY;
-    var active = null;
-    $$("section.section").forEach(function (sec) {
-      if (!active && sec.getBoundingClientRect().bottom > 90) active = sec.id;
-    });
-
+  function paint(keepScroll) {
     document.documentElement.setAttribute("data-mode", MODE);
+    document.documentElement.setAttribute("data-view", current === HOME ? "home" : "page");
     $("#modeSwitch").innerHTML = renderModeSwitch();
-    $("#content").innerHTML = renderHero() + '<div class="wrap">' +
-      PB.sections.map(renderSection).join("") + renderSources() +
-      '<footer class="pagefoot"><p>' + esc(PB.meta.disclaimer) + '</p>' +
-      "<p>" + esc(PB.meta.owner) + " &middot; " + esc(PB.meta.title) + " &middot; v" + esc(PB.meta.version) + "</p></footer>" +
-      "</div>";
+    $("#sidenav").innerHTML = renderNav();
+
+    var y = keepScroll ? window.scrollY : 0;
+    $("#content").innerHTML = current === HOME
+      ? renderHome()
+      : (current === "sources" ? renderSources() : renderPage(current));
+
+    if (current !== HOME && current !== "sources") {
+      var toc = renderToc();
+      var rail = $("#rail");
+      rail.innerHTML = toc;
+      rail.hidden = !toc;
+    } else {
+      $("#rail").innerHTML = "";
+      $("#rail").hidden = true;
+    }
 
     applyGlossary();
-    initSpy();
     updateNavigator();
     $$("[data-table]").forEach(function (w) { applyTable(w.dataset.table); });
 
-    // hold the reader roughly where they were rather than throwing them to the top
+    // a citation click lands here: highlight the entry it asked for
+    if (current === "sources") {
+      var want = null;
+      try { want = sessionStorage.getItem("saa-src"); } catch (e) {}
+      if (want) {
+        try { sessionStorage.removeItem("saa-src"); } catch (e) {}
+        var hit = document.getElementById(want);
+        if (hit) {
+          hit.classList.add("hit");
+          setTimeout(function () { hit.scrollIntoView({ behavior: "smooth", block: "center" }); }, 40);
+          setTimeout(function () { hit.classList.remove("hit"); }, 2600);
+        }
+      }
+    }
+
     var prev = document.documentElement.style.scrollBehavior;
     document.documentElement.style.scrollBehavior = "auto";
-    if (active) {
-      var el = document.getElementById(active);
-      if (el) el.scrollIntoView();
-      else window.scrollTo(0, y);
-    } else {
-      window.scrollTo(0, y);
-    }
+    window.scrollTo(0, y);
     document.documentElement.style.scrollBehavior = prev;
+
+    document.title = (current === HOME ? "" : (sectionById(current) ? sectionById(current).title + " | " : "Sources | ")) +
+      "India Qualifications Playbook | Swift AI Academy";
+  }
+
+  function route() {
+    var id = parseHash();
+    if (id === null) return;                       // in-page anchor, leave the page alone
+    if (id !== HOME && id !== "sources" && !sectionById(id)) id = HOME;
+    var same = id === current;
+    current = id;
+    paint(same);
+  }
+
+  function go(id) {
+    location.hash = id === HOME ? "#/" : "#/" + id;
   }
 
   function boot() {
@@ -638,22 +788,25 @@
       if (saved) document.documentElement.setAttribute("data-theme", saved);
     } catch (e) {}
 
-    $("#sidenav").innerHTML = renderNav();
-    document.documentElement.setAttribute("data-mode", MODE);
-    $("#modeSwitch").innerHTML = renderModeSwitch();
-    $("#content").innerHTML = renderHero() + '<div class="wrap">' +
-      PB.sections.map(renderSection).join("") + renderSources() +
-      '<footer class="pagefoot"><p>' + esc(PB.meta.disclaimer) + '</p>' +
-      "<p>" + esc(PB.meta.owner) + " &middot; " + esc(PB.meta.title) + " &middot; v" + esc(PB.meta.version) + "</p></footer>" +
-      "</div>";
-
-    applyGlossary();
     buildIndex();
     initSearch();
-    initSpy();
-    updateNavigator();
 
-    // table tools
+    // normalise legacy links such as #states into #/states without firing a route
+    var legacy = parseHash();
+    if (legacy && legacy !== HOME && location.hash.indexOf("#/") !== 0 &&
+        (legacy === "sources" || sectionById(legacy))) {
+      history.replaceState(null, "", "#/" + legacy);
+    }
+
+    current = (function () {
+      var id = parseHash();
+      if (id === null || id === HOME) return HOME;
+      return (id === "sources" || sectionById(id)) ? id : HOME;
+    })();
+    paint(false);
+
+    window.addEventListener("hashchange", route);
+
     document.addEventListener("input", function (e) {
       if (e.target.dataset && e.target.dataset.tsearch) applyTable(e.target.dataset.tsearch);
     });
@@ -661,13 +814,23 @@
       if (e.target.dataset && e.target.dataset.tfilter) applyTable(e.target.dataset.tfilter);
       if (e.target.id === "navSelect") updateNavigator();
     });
+
     document.addEventListener("click", function (e) {
+      var more = e.target.closest("[data-tmore]");
+      if (more) {
+        var mid = more.dataset.tmore;
+        expanded[mid] = !expanded[mid];
+        applyTable(mid);
+        if (!expanded[mid]) more.closest("[data-table]").scrollIntoView({ block: "nearest" });
+        return;
+      }
       var clear = e.target.closest("[data-tclear]");
       if (clear) {
         var id = clear.dataset.tclear;
         var inp = $('[data-tsearch="' + id + '"]');
         if (inp) inp.value = "";
         $$('[data-tfilter="' + id + '"]').forEach(function (s) { s.value = ""; });
+        expanded[id] = false;
         applyTable(id);
         return;
       }
@@ -682,7 +845,7 @@
           setTimeout(function () { cp.textContent = "Copy"; cp.classList.remove("done"); }, 1800);
         }).catch(function () {
           var r = document.createRange(); r.selectNodeContents(pre);
-          var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
         });
         return;
       }
@@ -690,26 +853,26 @@
       if (ref) {
         var want = String(ref.dataset.ref);
         var hit = PB.sources.filter(function (s) { return String(s.n).split(",").indexOf(want) !== -1; })[0];
-        var el = document.getElementById("src-" + slug(hit ? hit.n : want));
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.style.transition = "background .25s";
-          el.style.background = "var(--gold-50)";
-          setTimeout(function () { el.style.background = ""; }, 1800);
+        try { sessionStorage.setItem("saa-src", "src-" + slug(hit ? hit.n : want)); } catch (err) {}
+        go("sources");
+        return;
+      }
+      var mb = e.target.closest(".mode-btn");
+      if (mb) {
+        if (mb.dataset.mode !== MODE) {
+          MODE = mb.dataset.mode;
+          try { localStorage.setItem(MODE_KEY, MODE); } catch (err) {}
+          paint(true);
         }
         return;
       }
+      if (e.target.closest("#heroSearch")) { $("#searchBtn").click(); return; }
       if (e.target.closest("#menuBtn")) { toggleNav(); return; }
       if (e.target.closest(".navlink") && window.innerWidth <= 1080) { toggleNav(false); return; }
       if (e.target.id === "scrim") { toggleNav(false); return; }
-      var mb = e.target.closest(".mode-btn");
-      if (mb) { setMode(mb.dataset.mode); return; }
       if (e.target.closest("#themeBtn")) { setTheme(currentTheme() === "dark" ? "light" : "dark"); return; }
       if (e.target.closest("#printBtn")) { window.print(); return; }
     });
-
-    // initialise counts
-    $$("[data-table]").forEach(function (w) { applyTable(w.dataset.table); });
 
     function toggleNav(force) {
       var nav = $("#sidenav"), scrim = $("#scrim");
@@ -717,12 +880,6 @@
       nav.classList.toggle("open", open);
       scrim.classList.toggle("open", open);
       document.body.style.overflow = open ? "hidden" : "";
-    }
-
-    // deep link on load
-    if (location.hash) {
-      var t = document.getElementById(location.hash.slice(1));
-      if (t) setTimeout(function () { t.scrollIntoView(); }, 60);
     }
   }
 
