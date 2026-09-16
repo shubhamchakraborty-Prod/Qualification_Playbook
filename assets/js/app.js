@@ -35,6 +35,20 @@
     return "";
   }
 
+  /* ---------------------------------------------------------- reading mode */
+  var MODE_KEY = "saa-playbook-mode";
+  var MODE = "i";
+  try { var sm = localStorage.getItem(MODE_KEY); if (sm && /^[bia]$/.test(sm)) MODE = sm; } catch (e) {}
+  function setMode(m) {
+    if (m === MODE) return;
+    MODE = m;
+    try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
+    renderAll();
+  }
+  function modeMeta() {
+    return PB.modes.filter(function (x) { return x.k === MODE; })[0];
+  }
+
   function refSup(ref) {
     if (!ref) return "";
     return " <sup class='ref' data-ref='" + esc(ref) + "'>" + esc(ref) + "</sup>";
@@ -150,6 +164,10 @@
 
   R.table = function (b) {
     var cols = b.columns;
+    if (MODE === "b" && PB.cols[b.id]) {
+      var keep = PB.cols[b.id];
+      cols = cols.filter(function (c) { return keep.indexOf(c.key) !== -1; });
+    }
     var tools = "";
     var filterCols = cols.filter(function (c) { return c.filter; });
 
@@ -198,6 +216,29 @@
       "</tbody></table></div></div>";
   };
 
+  R.plain = function (pl) {
+    // pl.lede already runs as the section summary in beginner mode; do not repeat it
+    var h = '<div class="block plain"><div class="plain-points">';
+    pl.points.forEach(function (pt) {
+      h += '<div class="plain-point"><h4>' + esc(pt.h) + "</h4><p>" + esc(pt.p) + "</p></div>";
+    });
+    h += "</div>";
+    h += '<div class="analogy"><span class="k">Think of it like this</span><p>' + esc(pl.analogy) + "</p></div>";
+    h += '<div class="plain-next"><span class="k">What to do next</span><ol>';
+    pl.next.forEach(function (n) { h += "<li>" + esc(n) + "</li>"; });
+    h += "</ol></div></div>";
+    return h;
+  };
+
+  R.pro = function (items) {
+    var h = '<div class="block pro"><div class="pro-head"><span class="k">Practitioner notes</span>' +
+      "<p>The caveats, the things to verify, and the traps that are not obvious from the tables above.</p></div>";
+    items.forEach(function (n) {
+      h += '<div class="pro-note"><h4>' + esc(n.h) + "</h4><p>" + esc(n.p) + "</p></div>";
+    });
+    return h + "</div>";
+  };
+
   R.navigator = function () {
     var opts = PB.navigator.map(function (n, i) {
       return '<option value="' + i + '">' + esc(n.outcome) + "</option>";
@@ -213,15 +254,29 @@
 
   /* ================================================== BUILD PAGE */
   function renderSection(s) {
+    var pl = PB.plain[s.id];
+    var wwh = (MODE === "b" && pl && pl.wwh) ? pl.wwh : s.wwh;
+
     var h = '<section class="section" id="' + esc(s.id) + '">';
     h += '<div class="section-head"><span class="num">' + esc(s.num) + " / " + esc(s.eyebrow) + "</span>" +
       "<h2>" + esc(s.title) + "</h2>" +
-      '<p class="section-summary">' + esc(s.summary) + "</p></div>";
+      '<p class="section-summary">' + esc(MODE === "b" && pl ? pl.lede : s.summary) + "</p></div>";
     h += '<div class="wwh">' +
-      '<div class="wwh-card"><span class="k">What</span><p>' + esc(s.wwh.what) + "</p></div>" +
-      '<div class="wwh-card"><span class="k">Why</span><p>' + esc(s.wwh.why) + "</p></div>" +
-      '<div class="wwh-card"><span class="k">How</span><p>' + esc(s.wwh.how) + "</p></div></div>";
-    s.blocks.forEach(function (b) { if (R[b.t]) h += R[b.t](b); });
+      '<div class="wwh-card"><span class="k">What</span><p>' + esc(wwh.what) + "</p></div>" +
+      '<div class="wwh-card"><span class="k">Why</span><p>' + esc(wwh.why) + "</p></div>" +
+      '<div class="wwh-card"><span class="k">How</span><p>' + esc(wwh.how) + "</p></div></div>";
+
+    if (MODE === "b" && pl) h += R.plain(pl);
+
+    s.blocks.forEach(function (b) {
+      // Beginner mode drops the citation-heavy regulatory prose; the plain
+      // explainer above covers the same ground in simpler language.
+      if (MODE === "b" && b.t === "prose") return;
+      if (R[b.t]) h += R[b.t](b);
+    });
+
+    if (MODE === "a" && PB.pro[s.id]) h += R.pro(PB.pro[s.id]);
+
     return h + "</section>";
   }
 
@@ -257,6 +312,7 @@
       '<span class="eyebrow">Swift AI Academy &middot; Credential Strategy</span>' +
       "<h1>" + esc(PB.meta.title) + "</h1>" +
       '<p class="hero-lede">' + esc(PB.meta.strapline) + "</p>" +
+      '<div class="hero-mode"><span class="k">Reading mode: ' + esc(modeMeta().label) + "</span><p>" + esc(modeMeta().blurb) + "</p></div>" +
       '<div class="hero-stats">' +
       '<div class="hero-stat"><b>' + PB.sections.length + '</b><span>Sections</span></div>' +
       '<div class="hero-stat"><b>' + tables + '</b><span>Master tables</span></div>' +
@@ -268,6 +324,45 @@
       '<a class="btn btn-gold" href="#navigator"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 5-5 2.2 2.2-5z"/></svg>Open the Credential Navigator</a>' +
       '<a class="btn btn-ghost" href="#start">Read the strategy</a>' +
       "</div></header>";
+  }
+
+  /* ================================================== GLOSSARY (beginner) */
+  var GLOSS_SEL = ".plain p, .prose p, .callout p, .wwh-card p, .section-summary, .acc-body p, .layer p, .card p";
+
+  function applyGlossary() {
+    if (MODE !== "b") return;
+    var terms = Object.keys(PB.gloss).sort(function (a, b) { return b.length - a.length; });
+    $$(GLOSS_SEL).forEach(function (el) {
+      var used = {};
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      var nodes = [], n;
+      while ((n = walker.nextNode())) {
+        if (!n.parentElement.closest("abbr, a, sup, code")) nodes.push(n);
+      }
+      nodes.forEach(function (node) {
+        var text = node.nodeValue, frag = null, cursor = 0;
+        for (var i = 0; i < terms.length; i++) {
+          var t = terms[i];
+          if (used[t]) continue;
+          var re = new RegExp("(^|[^\\w-])(" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")(?![\\w-])");
+          var m = re.exec(text.slice(cursor));
+          if (!m) continue;
+          var at = cursor + m.index + m[1].length;
+          frag = frag || document.createDocumentFragment();
+          frag.appendChild(document.createTextNode(text.slice(cursor, at)));
+          var ab = document.createElement("abbr");
+          ab.setAttribute("title", PB.gloss[t]);
+          ab.textContent = m[2];
+          frag.appendChild(ab);
+          cursor = at + m[2].length;
+          used[t] = 1;
+        }
+        if (frag) {
+          frag.appendChild(document.createTextNode(text.slice(cursor)));
+          node.parentNode.replaceChild(frag, node);
+        }
+      });
+    });
   }
 
   /* ================================================== SEARCH INDEX */
@@ -301,6 +396,14 @@
           });
         }
       });
+    });
+    PB.sections.forEach(function (sec) {
+      var pl = PB.plain[sec.id];
+      if (pl) {
+        indexText(sec, sec.title + " in plain words", pl.lede + " " + pl.analogy);
+        pl.points.forEach(function (pt) { indexText(sec, pt.h, pt.p); });
+      }
+      (PB.pro[sec.id] || []).forEach(function (n) { indexText(sec, n.h, n.p); });
     });
     PB.sources.forEach(function (s) {
       INDEX.push({ s: "Sources", sid: "sources", t: s.label, b: s.url, low: (s.label + " " + s.url).toLowerCase(), a: "sources" });
@@ -402,10 +505,12 @@
   }
 
   /* ================================================== SCROLL SPY */
+  var spyObs = null;
   function initSpy() {
+    if (spyObs) spyObs.disconnect();
     var links = {};
     $$(".navlink").forEach(function (a) { links[a.getAttribute("href").slice(1)] = a; });
-    var obs = new IntersectionObserver(function (entries) {
+    spyObs = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         if (!e.isIntersecting) return;
         $$(".navlink").forEach(function (a) { a.classList.remove("active"); });
@@ -416,7 +521,7 @@
         }
       });
     }, { rootMargin: "-80px 0px -72% 0px", threshold: 0 });
-    $$("section.section").forEach(function (s) { obs.observe(s); });
+    $$("section.section").forEach(function (s) { spyObs.observe(s); });
   }
 
   /* ================================================== SEARCH MODAL */
@@ -486,6 +591,47 @@
   }
 
   /* ================================================== BOOT */
+  function renderModeSwitch() {
+    return PB.modes.map(function (m) {
+      return '<button type="button" class="mode-btn' + (m.k === MODE ? " on" : "") +
+        '" data-mode="' + m.k + '" aria-pressed="' + (m.k === MODE) + '" title="' + esc(m.blurb) + '">' +
+        '<span class="full">' + esc(m.label) + '</span><span class="abbr">' + esc(m.short) + "</span></button>";
+    }).join("");
+  }
+
+  function renderAll() {
+    var y = window.scrollY;
+    var active = null;
+    $$("section.section").forEach(function (sec) {
+      if (!active && sec.getBoundingClientRect().bottom > 90) active = sec.id;
+    });
+
+    document.documentElement.setAttribute("data-mode", MODE);
+    $("#modeSwitch").innerHTML = renderModeSwitch();
+    $("#content").innerHTML = renderHero() + '<div class="wrap">' +
+      PB.sections.map(renderSection).join("") + renderSources() +
+      '<footer class="pagefoot"><p>' + esc(PB.meta.disclaimer) + '</p>' +
+      "<p>" + esc(PB.meta.owner) + " &middot; " + esc(PB.meta.title) + " &middot; v" + esc(PB.meta.version) + "</p></footer>" +
+      "</div>";
+
+    applyGlossary();
+    initSpy();
+    updateNavigator();
+    $$("[data-table]").forEach(function (w) { applyTable(w.dataset.table); });
+
+    // hold the reader roughly where they were rather than throwing them to the top
+    var prev = document.documentElement.style.scrollBehavior;
+    document.documentElement.style.scrollBehavior = "auto";
+    if (active) {
+      var el = document.getElementById(active);
+      if (el) el.scrollIntoView();
+      else window.scrollTo(0, y);
+    } else {
+      window.scrollTo(0, y);
+    }
+    document.documentElement.style.scrollBehavior = prev;
+  }
+
   function boot() {
     try {
       var saved = localStorage.getItem(THEME_KEY);
@@ -493,12 +639,15 @@
     } catch (e) {}
 
     $("#sidenav").innerHTML = renderNav();
+    document.documentElement.setAttribute("data-mode", MODE);
+    $("#modeSwitch").innerHTML = renderModeSwitch();
     $("#content").innerHTML = renderHero() + '<div class="wrap">' +
       PB.sections.map(renderSection).join("") + renderSources() +
       '<footer class="pagefoot"><p>' + esc(PB.meta.disclaimer) + '</p>' +
       "<p>" + esc(PB.meta.owner) + " &middot; " + esc(PB.meta.title) + " &middot; v" + esc(PB.meta.version) + "</p></footer>" +
       "</div>";
 
+    applyGlossary();
     buildIndex();
     initSearch();
     initSpy();
@@ -553,6 +702,8 @@
       if (e.target.closest("#menuBtn")) { toggleNav(); return; }
       if (e.target.closest(".navlink") && window.innerWidth <= 1080) { toggleNav(false); return; }
       if (e.target.id === "scrim") { toggleNav(false); return; }
+      var mb = e.target.closest(".mode-btn");
+      if (mb) { setMode(mb.dataset.mode); return; }
       if (e.target.closest("#themeBtn")) { setTheme(currentTheme() === "dark" ? "light" : "dark"); return; }
       if (e.target.closest("#printBtn")) { window.print(); return; }
     });

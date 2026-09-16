@@ -30,6 +30,20 @@ organisation to approach, the approval that governs it and the practical first m
 | 14 | Action plan | Master Table H pipeline, day 30 / 60 / 90 execution plan, pre-signing evidence list |
 | 15 | Sources | 43 primary source entries covering all 76 citations |
 
+## Reading modes
+
+Three modes, switchable from the header and remembered between visits. They differ in
+**content**, not just in what is hidden.
+
+| Mode | Who it is for | What changes |
+|------|---------------|--------------|
+| **Beginner** | Someone new to the ecosystem | A plain-language explainer per section: three key points, a real-world analogy and three next steps. Regulatory prose is replaced rather than hidden. Every master table is trimmed to its 3-4 essential columns. Acronyms get hover definitions from a 40-term glossary. |
+| **Intermediate** | The working default | Full What / Why / How, full prose, all table columns, all citations. |
+| **Advanced** | Someone about to file or sign | Everything in Intermediate plus **practitioner notes** per section: the amended-guidelines warning, the absent approval SLA, the Section 22 boundary, the RPL cap and labelling duty, jurisdiction-versus-recognition, exclusivity and teach-out clauses. |
+
+Search indexes all three modes, so a beginner explainer or a practitioner note is findable
+whichever mode is active.
+
 ## Features
 
 - **Global search** across every table row, template, myth and source. `Ctrl`/`Cmd` + `K`, or `/`.
@@ -79,11 +93,14 @@ index.html                 markup shell, fonts, header, search modal
 404.html                   branded not-found page
 assets/css/styles.css      design tokens, layout, components, responsive and print rules
 assets/js/data.js          all playbook content as structured data (sections, tables, sources)
-assets/js/app.js           renderer, search index, table filters, Credential Navigator, theming
+assets/js/modes.js         beginner explainers, advanced practitioner notes, glossary, per-mode columns
+assets/js/app.js           renderer, search index, table filters, Credential Navigator, modes, theming
 assets/img/                logo mark, stacked lockup, favicon (vector, from the master artwork)
 ```
 
-Content lives entirely in `assets/js/data.js`. Each section declares a `wwh` triad and a list of
+Content lives in `assets/js/data.js`, with the mode-specific layers in `assets/js/modes.js`
+(`plain` for Beginner, `pro` for Advanced, `cols` for Beginner column subsets, `gloss` for the
+acronym glossary), all keyed by section or table id. Each section declares a `wwh` triad and a list of
 typed blocks (`table`, `flow`, `tree`, `cards`, `split`, `layers`, `accordion`, `templates`,
 `phases`, `callout`, `prose`). Adding a row, a table or a whole section means editing data, not markup.
 
